@@ -46,7 +46,7 @@ from datetime import datetime, timedelta
 
 from .core import Zappa, logger, API_GATEWAY_REGIONS
 from .utilities import (check_new_version_available, detect_django_settings,
-                  detect_flask_apps, parse_s3_url, human_size,
+                  detect_flask_apps, parse_s3_url, human_size, parse_env_vars,
                   validate_name, InvalidAwsLambdaName,
                   get_runtime_from_python_version, string_to_timestamp)
 
@@ -212,6 +212,14 @@ class ZappaCLI(object):
         )
         group.add_argument(
             '-q', '--quiet', action='store_true', help='Silence all output.'
+        )
+        group.add_argument(
+            '-e', '--environment_variables', nargs='+', help='Additional environment variables to add.',
+            metavar='var1=val1 var2=val2'
+        )
+        group.add_argument(
+            '--aws_environment_variables', nargs='+', help='Additional aws environment variables to add.',
+            metavar='var1=val1 var2=val2'
         )
         # https://github.com/Miserlou/Zappa/issues/407
         # Moved when 'template' command added.
@@ -527,7 +535,9 @@ class ZappaCLI(object):
 
         # Load our settings, based on api_stage.
         try:
-            self.load_settings(self.vargs.get('settings_file'))
+            self.load_settings(self.vargs.get('settings_file'),
+                               additionnal_environment_variables=self.vargs.get('environment_variables'),
+                               additionnal_aws_environment_variables=self.vargs.get('aws_environment_variables'))
         except ValueError as e:
             if hasattr(e, 'message'):
                 print("Error: {}".format(e.message))
@@ -1945,7 +1955,8 @@ class ZappaCLI(object):
             print(e)
             return
 
-    def load_settings(self, settings_file=None, session=None):
+    def load_settings(self, settings_file=None, session=None, additionnal_environment_variables=None,
+                      additionnal_aws_environment_variables=None):
         """
         Load the local zappa_settings file.
 
@@ -1980,6 +1991,18 @@ class ZappaCLI(object):
             self.project_name = validate_name(self.stage_config['project_name'])
         else:
             self.project_name = self.get_project_name()
+
+        # Merge environment variables from zappa_settings and the command line
+        environment_variables = self.stage_config.get('environment_variables', {})
+        if additionnal_environment_variables:
+            additionnal_environment_variables = parse_env_vars(additionnal_environment_variables)
+            environment_variables.update(additionnal_environment_variables)
+
+        # Merge aws environment variables from zappa_settings and the command line
+        aws_environment_variables = self.stage_config.get('aws_environment_variables', {})
+        if additionnal_aws_environment_variables:
+            additionnal_aws_environment_variables = parse_env_vars(additionnal_aws_environment_variables)
+            aws_environment_variables.update(additionnal_aws_environment_variables)
 
         # The name of the actual AWS Lambda function, ex, 'helloworld-dev'
         # Assume that we already have have validated the name beforehand.
@@ -2034,8 +2057,8 @@ class ZappaCLI(object):
         self.iam_authorization = self.stage_config.get('iam_authorization', False)
         self.cors = self.stage_config.get("cors", False)
         self.lambda_description = self.stage_config.get('lambda_description', "Zappa Deployment")
-        self.environment_variables = self.stage_config.get('environment_variables', {})
-        self.aws_environment_variables = self.stage_config.get('aws_environment_variables', {})
+        self.environment_variables = environment_variables
+        self.aws_environment_variables = aws_environment_variables
         self.check_environment(self.environment_variables)
         self.authorizer = self.stage_config.get('authorizer', {})
         self.runtime = self.stage_config.get('runtime', get_runtime_from_python_version())
@@ -2709,6 +2732,7 @@ def handle(): # pragma: no cover
         shamelessly_promote()
 
         sys.exit(-1)
+
 
 if __name__ == '__main__': # pragma: no cover
     handle()

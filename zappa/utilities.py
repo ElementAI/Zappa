@@ -10,6 +10,8 @@ import shutil
 import stat
 import sys
 
+import click
+
 from past.builtins import basestring
 
 if sys.version_info[0] < 3:
@@ -422,3 +424,23 @@ def titlecase_keys(d):
     Takes a dict with keys of type str and returns a new dict with all keys titlecased.
     """
     return {k.title(): v for k, v in d.items()}
+
+
+def parse_env_vars(key_vals):
+    """
+    Parse additional environment variables sent via CLI. User can send n numbers of key=val pairs for both aws
+    environment variables and environment variables. This function transform the list of key and value pairs into a
+    dict.
+    """
+    env_vars = {}
+
+    for key_val in key_vals:
+        if '=' not in key_val:
+            continue
+
+        try:
+            env_vars[key_val.split('=', 1)[0]] = key_val.split('=', 1)[1]
+        except Exception:
+            click.echo(f"Cannot parse env variable {key_val}")
+
+    return env_vars
